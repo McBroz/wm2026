@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WM 2026 Tippspiel</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --primary: #C8102E;
@@ -26,7 +27,6 @@
   .nav { display: flex; gap: 0.5rem; }
   .nav-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); padding: 6px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; }
   .nav-btn:hover, .nav-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
-  .nav-btn.outline:hover { background: transparent; border-color: var(--text2); color: var(--text); }
   .user-badge { font-size: 0.85rem; color: var(--text2); }
   .user-badge strong { color: var(--text); }
   .page { display: none; max-width: 960px; margin: 0 auto; padding: 2rem; }
@@ -90,19 +90,10 @@
   .admin-row:last-child { border-bottom: none; }
   .refresh-btn { background: var(--surface3); border: 1px solid var(--border); color: var(--text2); padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
   .refresh-btn:hover { border-color: var(--primary); color: var(--primary); }
+  @media(max-width:600px) { header { padding: 0 1rem; } .page { padding: 1rem; } .match-row { gap: 0.4rem; } .team { font-size: 0.78rem; } }
 </style>
 </head>
 <body>
-
-<!-- CONFIG (bearbeite diese Werte) -->
-<script>
-const CONFIG = {
-  token: 'c70lagT5LvsW_SUfmAdSbPHZLR8X1rR_ZfD22Iz-IwpxXZC6qPcMnpxKVrkZLkYXWnhAma5xK2PgOo8C',           // <-- deinen neuen kDrive Token eintragen
-  driveId: '3265478',
-  fileId: '7',                           // File-ID der wm2026_data.json
-  adminPw: 'Tipo2018'        // <-- Admin-Passwort wählen
-};
-</script>
 
 <div id="overlay" class="overlay"><div class="spin"></div><div style="color:var(--text2);font-size:0.88rem">Laden...</div></div>
 <div id="toast"></div>
@@ -113,18 +104,17 @@ const CONFIG = {
     <button class="nav-btn active" onclick="go('rangliste')">Rangliste</button>
     <button class="nav-btn" onclick="go('tipps')">Meine Tipps</button>
     <button class="nav-btn" id="admin-btn" style="display:none" onclick="go('admin')">Admin</button>
-    <button class="nav-btn outline" onclick="logout()">Abmelden</button>
+    <button class="nav-btn" style="border-color:transparent;color:var(--text2)" onclick="logout()">Abmelden</button>
   </div>
   <div id="uinfo" class="user-badge" style="display:none">Eingeloggt: <strong id="uname"></strong></div>
 </header>
 
-<!-- LOGIN -->
 <div class="page active" id="page-login">
   <div class="card">
-    <div class="page-title">Einloggen</div>
+    <div class="page-title">WM 2026</div>
     <div class="page-sub">Gib deinen Namen ein. Neue Spieler werden automatisch registriert.</div>
-    <div class="form-group"><label>Dein Name</label><input type="text" id="ln" placeholder="Vorname Nachname" maxlength="30"></div>
-    <div class="form-group" id="apwg" style="display:none"><label>Admin-Passwort</label><input type="password" id="apw"></div>
+    <div class="form-group"><label>Dein Name</label><input type="text" id="ln" placeholder="Vorname Nachname" maxlength="30" onkeydown="if(event.key==='Enter')login()"></div>
+    <div class="form-group" id="apwg" style="display:none"><label>Admin-Passwort</label><input type="password" id="apw" onkeydown="if(event.key==='Enter')login()"></div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem">
       <input type="checkbox" id="isa" onchange="document.getElementById('apwg').style.display=this.checked?'block':'none'" style="width:auto">
       <label for="isa" style="text-transform:none;font-size:0.88rem;color:var(--text2);cursor:pointer;margin:0">Als Admin einloggen</label>
@@ -134,11 +124,10 @@ const CONFIG = {
   </div>
 </div>
 
-<!-- RANGLISTE -->
 <div class="page" id="page-rangliste">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.2rem">
     <div class="section-title" style="margin:0">🏆 Rangliste</div>
-    <button class="refresh-btn" onclick="refreshRangliste()">↻ Aktualisieren</button>
+    <button class="refresh-btn" onclick="loadRangliste()">↻ Aktualisieren</button>
   </div>
   <div class="stats-row" id="gstats"></div>
   <div class="ranking-table">
@@ -147,7 +136,6 @@ const CONFIG = {
   </div>
 </div>
 
-<!-- TIPPS -->
 <div class="page" id="page-tipps">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
     <div class="section-title" style="margin:0">⚽ Meine Tipps</div>
@@ -157,7 +145,6 @@ const CONFIG = {
   <div style="height:70px"></div>
 </div>
 
-<!-- ADMIN -->
 <div class="page" id="page-admin">
   <div class="section-title">🔧 Admin — Ergebnisse eintragen</div>
   <p style="color:var(--text2);font-size:0.85rem;margin-bottom:1.5rem">Trage die offiziellen Ergebnisse ein. Punkte werden sofort berechnet.</p>
@@ -171,7 +158,12 @@ const CONFIG = {
 </div>
 
 <script>
-// ===== WM 2026 DATEN =====
+const SUPABASE_URL = 'https://tjrybgrdjvntdbjdlyio.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRqcnliZ3JkanZudGRiamRseWlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NDk3MTMsImV4cCI6MjA5NjQyNTcxM30.socQYgTkbSm0VZ9H5_7BoXY_PvhyjKSMrtWnDtKa6XI';
+const ADMIN_PW = 'pe2026admin';  // <-- Admin-Passwort hier ändern falls gewünscht
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 const GROUPS = {
   A:['Mexiko','Südafrika','Südkorea','Tschechien'],
   B:['Kanada','Bosnien-Herzegowina','Katar','Schweiz'],
@@ -188,61 +180,22 @@ const GROUPS = {
 };
 
 function getMatches(g) {
-  const t = GROUPS[g], m = [];
+  const t=GROUPS[g],m=[];
   for(let i=0;i<t.length;i++) for(let j=i+1;j<t.length;j++)
     m.push({id:`${g}_${i}_${j}`,home:t[i],away:t[j]});
   return m;
 }
-function allMatches() { return Object.keys(GROUPS).flatMap(g=>getMatches(g)); }
+function allMatches(){ return Object.keys(GROUPS).flatMap(g=>getMatches(g)); }
 
-// ===== STATE =====
-let S = { players:[], tipps:{}, results:{} };
-let ME = null, ADMIN = false, DIRTY = false;
+let ME=null, ADMIN=false, DIRTY=false;
+let myTipps={}, allResults={};
 
-// ===== KDRIVE API =====
-const BASE = `https://api.infomaniak.com/2/drive/${CONFIG.driveId}`;
-
-async function apiLoad() {
-  const r = await fetch(`${BASE}/files/${CONFIG.fileId}/download`, {
-    headers:{ Authorization:`Bearer ${CONFIG.token}` }
-  });
-  if(!r.ok) throw new Error(`HTTP ${r.status}`);
-  const txt = await r.text();
-  if(txt.trim()) {
-    try { const d=JSON.parse(txt); S=Object.assign({players:[],tipps:{},results:{}},d); } catch(e) {}
-  }
-}
-
-async function apiSave() {
-  const blob = new Blob([JSON.stringify(S)],{type:'application/octet-stream'});
-  const r = await fetch(`${BASE}/files/${CONFIG.fileId}/upload?conflict=overwrite`, {
-    method:'POST',
-    headers:{ Authorization:`Bearer ${CONFIG.token}`, 'Content-Type':'application/octet-stream' },
-    body: blob
-  });
-  if(!r.ok) throw new Error(`HTTP ${r.status}`);
-}
-
-// ===== PUNKTE =====
-function pts(tip,res) {
-  if(!tip||tip.h===''||tip.a===''||!res||res.h===''||res.a==='') return null;
-  const th=+tip.h,ta=+tip.a,rh=+res.h,ra=+res.a;
-  if(isNaN(th)||isNaN(ta)||isNaN(rh)||isNaN(ra)) return null;
+function pts(th,ta,rh,ra){
+  if(th===null||ta===null||rh===null||ra===null) return null;
   if(th===rh&&ta===ra) return 3;
-  const ts=Math.sign(th-ta),rs=Math.sign(rh-ra);
-  return ts===rs?1:0;
-}
-function userPts(name) {
-  const t=S.tipps[name]||{};
-  let p=0,g=0;
-  for(const [id,tip] of Object.entries(t)){
-    const r=pts(tip,S.results[id]);
-    if(r!==null){p+=r;g++;}
-  }
-  return {p,g};
+  return Math.sign(th-ta)===Math.sign(rh-ra)?1:0;
 }
 
-// ===== UI HELPERS =====
 function toast(msg,type='s'){
   const t=document.getElementById('toast');
   t.textContent=msg; t.className=`show ${type}`;
@@ -258,84 +211,117 @@ function go(name){
   const btn=document.querySelector(`.nav-btn[onclick="go('${name}')"]`);
   if(btn) btn.classList.add('active');
   document.getElementById('savebar').style.display=name==='tipps'?'flex':'none';
-  if(name==='rangliste') renderRangliste();
-  if(name==='tipps') renderTipps();
-  if(name==='admin') renderAdmin();
+  if(name==='rangliste') loadRangliste();
+  if(name==='tipps') loadTipps();
+  if(name==='admin') loadAdmin();
 }
 
-// ===== LOGIN =====
 async function login(){
   const name=document.getElementById('ln').value.trim();
   const isAdmin=document.getElementById('isa').checked;
   const apw=document.getElementById('apw').value;
-  if(name.length<2){showErr('lerr','Name zu kurz');return;}
-  if(isAdmin&&apw!==CONFIG.adminPw){showErr('lerr','Falsches Admin-Passwort');return;}
+  if(name.length<2){showErr('lerr','Name zu kurz (min. 2 Zeichen)');return;}
+  if(isAdmin&&apw!==ADMIN_PW){showErr('lerr','Falsches Admin-Passwort');return;}
   loading(true);
   try {
-    await apiLoad();
-    const ex=S.players.find(p=>p.toLowerCase()===name.toLowerCase());
-    if(!ex){
-      S.players.push(name);
-      S.tipps[name]=S.tipps[name]||{};
-      await apiSave();
+    // Check if player exists
+    const {data:existing}=await sb.from('players').select('name').ilike('name',name).single();
+    if(!existing){
+      // Check name not taken (case insensitive)
+      const {data:check}=await sb.from('players').select('name').ilike('name',name);
+      if(check&&check.length>0){showErr('lerr','Dieser Name ist bereits vergeben');loading(false);return;}
+      await sb.from('players').insert({name});
     }
-    ME=ex||name; ADMIN=isAdmin;
+    ME=existing?.name||name; ADMIN=isAdmin;
     document.getElementById('uname').textContent=ME;
     document.getElementById('uinfo').style.display='block';
     document.getElementById('nav').style.display='flex';
     document.getElementById('admin-btn').style.display=ADMIN?'inline-block':'none';
     go('rangliste');
-  } catch(e){ showErr('lerr','Verbindungsfehler: '+e.message); }
+  } catch(e){ showErr('lerr','Fehler: '+e.message); }
   finally { loading(false); }
 }
 
 function logout(){
-  ME=null;ADMIN=false;
+  ME=null;ADMIN=false;myTipps={};allResults={};
   document.getElementById('nav').style.display='none';
   document.getElementById('uinfo').style.display='none';
+  document.getElementById('ln').value='';
+  document.getElementById('isa').checked=false;
+  document.getElementById('apwg').style.display='none';
   go('login');
 }
 
-// ===== RANGLISTE =====
-async function refreshRangliste(){ loading(true); try{ await apiLoad(); renderRangliste(); }catch(e){toast('Fehler: '+e.message,'e');} finally{loading(false);} }
-
-function renderRangliste(){
-  const ranking=S.players.map(n=>{const {p,g}=userPts(n);return{n,p,g};}).sort((a,b)=>b.p-a.p||b.g-a.g);
-  const played=Object.keys(S.results).length;
-  document.getElementById('gstats').innerHTML=`
-    <div class="stat-card"><div class="stat-val gold">${S.players.length}</div><div class="stat-lbl">Teilnehmer</div></div>
-    <div class="stat-card"><div class="stat-val red">${played}</div><div class="stat-lbl">Spiele gespielt</div></div>
-    <div class="stat-card"><div class="stat-val">${allMatches().length}</div><div class="stat-lbl">Spiele total</div></div>
-    <div class="stat-card"><div class="stat-val gold">${ranking[0]?.p||0}</div><div class="stat-lbl">Höchste Punkte</div></div>`;
-  const list=document.getElementById('rlist');
-  if(!ranking.length){list.innerHTML='<div style="padding:2rem;text-align:center;color:var(--text2)">Noch keine Teilnehmer</div>';return;}
-  list.innerHTML=ranking.map(({n,p,g},i)=>`
-    <div class="ranking-row${n===ME?' me':''}">
-      <div class="rank-num${i===0?' p1':i===1?' p2':i===2?' p3':''}">${i+1}</div>
-      <div>${n}${n===ME?' <span style="font-size:0.72rem;color:var(--primary)">(Du)</span>':''}</div>
-      <div class="rank-pts">${p}</div>
-      <div class="rank-games">${g}</div>
-    </div>`).join('');
+async function loadRangliste(){
+  loading(true);
+  try {
+    const [{data:players},{data:tipps},{data:results}]=await Promise.all([
+      sb.from('players').select('name').order('created_at'),
+      sb.from('tipps').select('*'),
+      sb.from('results').select('*')
+    ]);
+    const resMap={};
+    (results||[]).forEach(r=>resMap[r.match_id]={h:r.home,a:r.away});
+    const ranking=(players||[]).map(({name})=>{
+      const ut=(tipps||[]).filter(t=>t.player_name===name);
+      let p=0,g=0;
+      ut.forEach(t=>{
+        const r=resMap[t.match_id];
+        if(r){const pt=pts(t.home,t.away,r.h,r.a);if(pt!==null){p+=pt;g++;}}
+      });
+      return{name,p,g};
+    }).sort((a,b)=>b.p-a.p||b.g-a.g);
+    const played=Object.keys(resMap).length;
+    document.getElementById('gstats').innerHTML=`
+      <div class="stat-card"><div class="stat-val gold">${(players||[]).length}</div><div class="stat-lbl">Teilnehmer</div></div>
+      <div class="stat-card"><div class="stat-val red">${played}</div><div class="stat-lbl">Spiele gespielt</div></div>
+      <div class="stat-card"><div class="stat-val">${allMatches().length}</div><div class="stat-lbl">Spiele total</div></div>
+      <div class="stat-card"><div class="stat-val gold">${ranking[0]?.p||0}</div><div class="stat-lbl">Höchste Punkte</div></div>`;
+    const list=document.getElementById('rlist');
+    if(!ranking.length){list.innerHTML='<div style="padding:2rem;text-align:center;color:var(--text2)">Noch keine Teilnehmer</div>';return;}
+    list.innerHTML=ranking.map(({name,p,g},i)=>`
+      <div class="ranking-row${name===ME?' me':''}">
+        <div class="rank-num${i===0?' p1':i===1?' p2':i===2?' p3':''}">${i+1}</div>
+        <div>${name}${name===ME?' <span style="font-size:0.72rem;color:var(--primary)">(Du)</span>':''}</div>
+        <div class="rank-pts">${p}</div>
+        <div class="rank-games">${g}</div>
+      </div>`).join('');
+  } catch(e){ toast('Fehler: '+e.message,'e'); }
+  finally { loading(false); }
 }
 
-// ===== TIPPS =====
+async function loadTipps(){
+  loading(true);
+  try {
+    const [{data:tipps},{data:results}]=await Promise.all([
+      sb.from('tipps').select('*').eq('player_name',ME),
+      sb.from('results').select('*')
+    ]);
+    myTipps={};
+    (tipps||[]).forEach(t=>myTipps[t.match_id]={h:t.home,a:t.away});
+    allResults={};
+    (results||[]).forEach(r=>allResults[r.match_id]={h:r.home,a:r.away});
+    renderTipps();
+  } catch(e){ toast('Fehler: '+e.message,'e'); }
+  finally { loading(false); }
+}
+
 function renderTipps(){
-  const ut=S.tipps[ME]||{};
   let tp=0,tg=0;
   document.getElementById('gcontainer').innerHTML=Object.keys(GROUPS).map(g=>{
     const rows=getMatches(g).map(m=>{
-      const tip=ut[m.id]||{h:'',a:''};
-      const res=S.results[m.id];
-      const p=pts(tip,res);
+      const tip=myTipps[m.id]||{h:null,a:null};
+      const res=allResults[m.id];
+      const p=(tip.h!==null&&tip.a!==null&&res)?pts(tip.h,tip.a,res.h,res.a):null;
       if(p!==null){tp+=p;tg++;}
       const badge=p===3?'<span class="badge ok">+3 ✓✓</span>':p===1?'<span class="badge half">+1 ✓</span>':p===0?'<span class="badge no">+0</span>':'';
       return `<div class="match-row">
         <div class="team r">${m.home}</div>
         <div class="score-wrap">
-          <input type="number" class="score-inp" min="0" max="30" value="${tip.h}" placeholder="-"
+          <input type="number" class="score-inp" min="0" max="30" value="${tip.h!==null?tip.h:''}" placeholder="-"
             onchange="setTip('${m.id}','h',this.value)" oninput="dirty()">
           <span class="score-sep">:</span>
-          <input type="number" class="score-inp" min="0" max="30" value="${tip.a}" placeholder="-"
+          <input type="number" class="score-inp" min="0" max="30" value="${tip.a!==null?tip.a:''}" placeholder="-"
             onchange="setTip('${m.id}','a',this.value)" oninput="dirty()">
           ${badge}
         </div>
@@ -346,12 +332,12 @@ function renderTipps(){
   }).join('');
   document.getElementById('myscore').textContent=tg>0?`${tp} Punkte`:'';
   updateSaveStatus();
+  DIRTY=false;
 }
 
 function setTip(id,side,val){
-  if(!S.tipps[ME]) S.tipps[ME]={};
-  if(!S.tipps[ME][id]) S.tipps[ME][id]={h:'',a:''};
-  S.tipps[ME][id][side]=val;
+  if(!myTipps[id]) myTipps[id]={h:null,a:null};
+  myTipps[id][side]=val===''?null:parseInt(val);
 }
 function dirty(){ DIRTY=true; updateSaveStatus(); }
 function updateSaveStatus(){
@@ -359,74 +345,70 @@ function updateSaveStatus(){
   el.textContent=DIRTY?'Ungespeicherte Änderungen':'Tipps gespeichert ✓';
   el.className='save-status'+(DIRTY?'':' saved');
 }
+
 async function saveTipps(){
   loading(true);
   try {
-    await apiLoad(); // neueste Daten holen
-    S.tipps[ME]=S.tipps[ME]||{}; // meine Tipps aus lokalem State übernehmen
-    // Tipps aus UI lesen und in S mergen
-    const ut=S.tipps[ME];
-    allMatches().forEach(m=>{
-      const inps=document.querySelectorAll(`[data-mid="${m.id}"]`);
-      // schon in S via setTip
-    });
-    await apiSave();
+    const upserts=Object.entries(myTipps)
+      .filter(([,t])=>t.h!==null&&t.a!==null)
+      .map(([match_id,t])=>({player_name:ME,match_id,home:t.h,away:t.a}));
+    if(upserts.length){
+      const {error}=await sb.from('tipps').upsert(upserts,{onConflict:'player_name,match_id'});
+      if(error) throw error;
+    }
     DIRTY=false; updateSaveStatus();
     toast('Tipps gespeichert!','s');
   } catch(e){ toast('Fehler: '+e.message,'e'); }
   finally { loading(false); }
 }
 
-// ===== ADMIN =====
-function renderAdmin(){
-  document.getElementById('acontainer').innerHTML=Object.keys(GROUPS).map(g=>{
-    const rows=getMatches(g).map(m=>{
-      const res=S.results[m.id]||{h:'',a:''};
-      return `<div class="admin-row">
-        <div class="team r">${m.home}</div>
-        <div class="score-wrap">
-          <input type="number" class="score-inp" min="0" max="30" value="${res.h}" placeholder="-"
-            onchange="setRes('${m.id}','h',this.value)">
-          <span class="score-sep">:</span>
-          <input type="number" class="score-inp" min="0" max="30" value="${res.a}" placeholder="-"
-            onchange="setRes('${m.id}','a',this.value)">
-        </div>
-        <div class="team">${m.away}</div>
-        <button class="btn btn-sm" onclick="saveRes('${m.id}')">✓</button>
-      </div>`;
-    }).join('');
-    return `<div class="group-block"><div class="group-hdr">Gruppe ${g}</div>${rows}</div>`;
-  }).join('');
-}
-function setRes(id,side,val){
-  if(!S.results[id]) S.results[id]={h:'',a:''};
-  S.results[id][side]=val;
-}
-async function saveRes(id){
-  const r=S.results[id];
-  if(!r||r.h===''||r.a===''){toast('Beide Tore eintragen','e');return;}
+async function loadAdmin(){
+  if(!ADMIN) return;
   loading(true);
   try {
-    await apiLoad();
-    if(!S.results[id]) S.results[id]={h:'',a:''};
-    S.results[id]=r;
-    await apiSave();
+    const {data:results}=await sb.from('results').select('*');
+    allResults={};
+    (results||[]).forEach(r=>allResults[r.match_id]={h:r.home,a:r.away});
+    document.getElementById('acontainer').innerHTML=Object.keys(GROUPS).map(g=>{
+      const rows=getMatches(g).map(m=>{
+        const res=allResults[m.id]||{h:'',a:''};
+        return `<div class="admin-row">
+          <div class="team r">${m.home}</div>
+          <div class="score-wrap">
+            <input type="number" class="score-inp" min="0" max="30" value="${res.h!==null&&res.h!==''?res.h:''}" placeholder="-"
+              onchange="setRes('${m.id}','h',this.value)">
+            <span class="score-sep">:</span>
+            <input type="number" class="score-inp" min="0" max="30" value="${res.a!==null&&res.a!==''?res.a:''}" placeholder="-"
+              onchange="setRes('${m.id}','a',this.value)">
+          </div>
+          <div class="team">${m.away}</div>
+          <button class="btn btn-sm" onclick="saveRes('${m.id}')">✓</button>
+        </div>`;
+      }).join('');
+      return `<div class="group-block"><div class="group-hdr">Gruppe ${g}</div>${rows}</div>`;
+    }).join('');
+  } catch(e){ toast('Fehler: '+e.message,'e'); }
+  finally { loading(false); }
+}
+
+function setRes(id,side,val){
+  if(!allResults[id]) allResults[id]={h:null,a:null};
+  allResults[id][side]=val===''?null:parseInt(val);
+}
+
+async function saveRes(id){
+  const r=allResults[id];
+  if(!r||r.h===null||r.a===null){toast('Beide Tore eintragen','e');return;}
+  loading(true);
+  try {
+    const {error}=await sb.from('results').upsert({match_id:id,home:r.h,away:r.a},{onConflict:'match_id'});
+    if(error) throw error;
     toast('Ergebnis gespeichert!','s');
   } catch(e){ toast('Fehler: '+e.message,'e'); }
   finally { loading(false); }
 }
 
-// ===== INIT =====
-window.onload=async()=>{
-  if(CONFIG.token==='KDRIVE_TOKEN_HIER'){
-    loading(false);
-    document.getElementById('page-login').querySelector('.page-sub').innerHTML=
-      '⚠️ Bitte erst den kDrive Token in der HTML-Datei eintragen (Zeile ~30)';
-    return;
-  }
-  try { await apiLoad(); } catch(e) { console.warn('Init load failed:',e); }
-  loading(false);
-};
+window.onload=()=>{ loading(false); document.getElementById('ln').focus(); };
 </script>
 </body>
 </html>
