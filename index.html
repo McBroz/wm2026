@@ -1032,135 +1032,38 @@ async function loadAdmin(){
 async function loadUsers(){
   if(!ADMIN) return;
   const {data,error}=await sb.from('players').select('name,pin,is_admin').order('created_at');
-  if(error){ document.getElementById('userlist').innerHTML='<div style="padding:1rem;color:var(--text2)">Fehler beim Laden</div>'; return; }
+  if(error){ document.getElementById('userlist').innerHTML='<div style="padding:1rem;color:var(--text2)">Fehler</div>'; return; }
   document.getElementById('userlist').innerHTML=(data||[]).map(u=>{
     const pinDisplay=u.pin
-      ? `<span title="PIN anzeigen" style="font-family:monospace;font-size:0.95rem;letter-spacing:3px;cursor:pointer;color:var(--text2);user-select:none" onclick="this.textContent=this.textContent==='••••'?'${u.pin}':'••••'">••••</span>`
-      : `<span style="color:var(--text2);font-size:0.8rem;font-style:italic">kein PIN</span>`;
-    const adminBadge=u.is_admin?`<span style="font-size:0.7rem;background:rgba(200,16,46,0.15);color:var(--primary);border:1px solid rgba(200,16,46,0.3);border-radius:4px;padding:1px 5px;margin-left:5px">Admin</span>`:'';
-    return `<div class="user-mgmt-row">
-      <div class="user-name">${escHtml(u.name)}${adminBadge}</div>
-      <div style="display:flex;align-items:center;gap:8px">
-        ${pinDisplay}
-        <button class="pin-btn" title="PIN zurücksetzen" onclick="resetPin('${jsq(u.name)}')">🔓</button>
-        <button class="del-btn" title="Löschen" onclick="deleteUser('${jsq(u.name)}')">🗑</button>
-      </div>
-    </div>`;
-  }).join('') || '<div style="padding:1rem;color:var(--text2);font-size:0.85rem">Keine Spieler</div>';
+      ? '<span style="font-family:monospace;font-size:0.95rem;letter-spacing:3px;cursor:pointer;color:var(--text2);user-select:none" onclick="this.textContent=this.textContent===String.fromCharCode(8226,8226,8226,8226)?this.dataset.p:String.fromCharCode(8226,8226,8226,8226)" data-p="'+u.pin+'">'+String.fromCharCode(8226,8226,8226,8226)+'</span>'
+      : '<span style="color:var(--text2);font-size:0.8rem;font-style:italic">kein PIN</span>';
+    const adminBadge=u.is_admin?'<span style="font-size:0.7rem;background:rgba(200,16,46,0.15);color:var(--primary);border:1px solid rgba(200,16,46,0.3);border-radius:4px;padding:1px 5px;margin-left:5px">Admin</span>':'';
+    const n=jsq(u.name);
+    return '<div class="user-mgmt-row">'
+      +'<div class="user-name">'+escHtml(u.name)+adminBadge+'</div>'
+      +'<div style="display:flex;align-items:center;gap:8px">'
+      +pinDisplay
+      +'<button class="pin-btn" title="PIN zuruecksetzen" onclick="resetPin(\''+n+'\')">&#x1F513;</button>'
+      +'<button class="del-btn" title="Loeschen" onclick="deleteUser(\''+n+'\')">&#x1F5D1;</button>'
+      +'</div></div>';
+  }).join('')||'<div style="padding:1rem;color:var(--text2);font-size:0.85rem">Keine Spieler</div>';
 }
 
 async function resetPin(name){
-  if(!confirm(`PIN von "${name}" zurücksetzen?`)) return;
+  if(!confirm('PIN von "'+name+'" zuruecksetzen?')) return;
   const {error}=await sb.from('players').update({pin:null}).ilike('name',name);
   if(error) toast('Fehler: '+error.message,'e');
-  else{ toast(`PIN vo ${name} zrugggsetzt 🔓`,'s'); await loadUsers(); }
+  else{ toast('PIN vo '+name+' zrugggsetzt','s'); await loadUsers(); }
 }
 
 async function deleteUser(name){
-  if(!confirm(`"${name}" wirklich löschen?`)) return;
+  if(!confirm('"'+name+'" wirklich loeschen?')) return;
   loading(true);
   try{
     await sb.from('tipps').delete().eq('player_name',name);
     await sb.from('players').delete().ilike('name',name);
-    toast(`${name} isch wäg 🗑️`,'s');
+    toast(name+' isch waegg','s');
     await loadUsers();
   }catch(e){ toast('Fehler: '+e.message,'e'); }
   finally{ loading(false); }
 }
-
-async function loadUsers(){
-  try{
-    const {data:players}=await sb.from('players').select('name,pin').order('created_at');
-    const rows=(players||[]).map(p=>`
-      <div class="user-mgmt-row">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span class="user-name">${p.name}${p.name===ME?' <span style="font-size:0.72rem;color:var(--primary)">(Du)</span>':''}</span>
-          <span style="font-size:0.65rem;padding:2px 6px;border-radius:4px;${p.pin?'background:rgba(46,204,113,0.1);color:#2ecc71':'background:rgba(200,16,46,0.1);color:var(--primary)'}">${p.pin?'🔐 PIN':'⚠ kein PIN'}</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <button class="pin-btn" onclick="confirmResetPin('${jsq(p.name)}')" title="PIN zurücksetzen">🔑</button>
-          <button class="del-btn" onclick="confirmDelete('${jsq(p.name)}')" title="Löschen">✕</button>
-        </div>
-      </div>`).join('');
-    document.getElementById('userlist').innerHTML=rows||'<div style="padding:1rem 1.2rem;color:var(--text2);font-size:0.85rem">Keine Nutzer</div>';
-  }catch(e){toast('Fehler beim Laden der Nutzer','e');}
-}
-
-function confirmResetPin(name){
-  const overlay=document.createElement('div');
-  overlay.className='confirm-overlay';
-  overlay.innerHTML=`
-    <div class="confirm-box">
-      <h3>PIN zurücksetzen?</h3>
-      <p><strong>${name}</strong> muss beim nächsten Login einen neuen PIN wählen.</p>
-      <div class="confirm-btns">
-        <button class="btn-cancel" onclick="this.closest('.confirm-overlay').remove()">Abbrechen</button>
-        <button class="btn-warn" onclick="resetUserPin('${jsq(name)}',this.closest('.confirm-overlay'))">Zurücksetzen</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-}
-
-async function resetUserPin(name,overlay){
-  overlay.remove();
-  loading(true);
-  try{
-    const {error}=await sb.from('players').update({pin:null}).eq('name',name);
-    if(error) throw error;
-    toast(`PIN vo ${name} zrugggsetzt 🔓`,'s');
-    await loadUsers();
-  }catch(e){toast('Fehler: '+e.message,'e');}
-  finally{loading(false);}
-}
-
-function confirmDelete(name){
-  const overlay=document.createElement('div');
-  overlay.className='confirm-overlay';
-  overlay.innerHTML=`
-    <div class="confirm-box">
-      <h3>Nutzer löschen?</h3>
-      <p><strong>${name}</strong> und alle zugehörigen Tipps werden unwiderruflich gelöscht.</p>
-      <div class="confirm-btns">
-        <button class="btn-cancel" onclick="this.closest('.confirm-overlay').remove()">Abbrechen</button>
-        <button class="btn-danger" onclick="deleteUser('${jsq(name)}',this.closest('.confirm-overlay'))">Löschen</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-}
-
-async function deleteUser(name,overlay){
-  overlay.remove();
-  loading(true);
-  try{
-    await sb.from('tipps').delete().eq('player_name',name);
-    const {error}=await sb.from('players').delete().eq('name',name);
-    if(error) throw error;
-    toast(`${name} isch wäg 🗑️`,'s');
-    await loadUsers();
-  }catch(e){toast('Fehler: '+e.message,'e');}
-  finally{loading(false);}
-}
-
-function setRes(id,side,val){
-  if(!allResults[id]) allResults[id]={h:null,a:null};
-  allResults[id][side]=val===''?null:parseInt(val);
-}
-
-async function saveRes(id,btn){
-  const r=allResults[id];
-  if(!r||r.h===null||r.a===null){toast('Bitte beidi Tore iitrage!','e');return;}
-  loading(true);
-  try{
-    const {error}=await sb.from('results').upsert({match_id:id,home:r.h,away:r.a},{onConflict:'match_id'});
-    if(error) throw error;
-    toast('Resultat gspeicheret! ✓','s');
-    calDataLoaded=false;
-    if(btn){ const item=btn.closest('.admin-item'); if(item){ item.classList.add('saved-row'); const fcb=item.querySelector('.fc-admin'); if(fcb) fcb.remove(); } }
-  }catch(e){toast('Fehler: '+e.message,'e');}
-  finally{loading(false);}
-}
-
-window.onload=()=>{ loading(false); document.getElementById('ln').focus(); };
-</script>
-</body>
-</html>
