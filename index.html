@@ -1067,3 +1067,30 @@ async function deleteUser(name){
   }catch(e){ toast('Fehler: '+e.message,'e'); }
   finally{ loading(false); }
 }
+
+function setRes(id,side,val){
+  if(!allResults[id]) allResults[id]={h:null,a:null};
+  allResults[id][side]=val===''?null:parseInt(val);
+}
+
+async function saveRes(id,btn){
+  const r=allResults[id];
+  if(!r||r.h===null||r.a===null||r.h===''||r.a===''){toast('Bitte beidi Tore iitrage!','e');return;}
+  loading(true);
+  try{
+    const {error}=await sb.from('results').upsert({match_id:id,home:r.h,away:r.a},{onConflict:'match_id'});
+    if(error) throw error;
+    toast('Resultat gspeicheret! ✓','s');
+    calDataLoaded=false; // Kalender beim nächsten Öffnen neu laden
+    if(btn){
+      const item=btn.closest('.admin-item');
+      if(item){ item.classList.add('saved-row'); const fc=item.querySelector('.fc-admin'); if(fc) fc.remove(); }
+    }
+  }catch(e){toast('Fehler: '+e.message,'e');}
+  finally{loading(false);}
+}
+
+window.onload=()=>{ loading(false); document.getElementById('ln').focus(); };
+</script>
+</body>
+</html>
