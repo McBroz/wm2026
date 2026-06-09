@@ -1030,6 +1030,45 @@ async function loadAdmin(){
 }
 
 async function loadUsers(){
+  if(!ADMIN) return;
+  const {data,error}=await sb.from('players').select('name,pin,is_admin').order('created_at');
+  if(error){ document.getElementById('userlist').innerHTML='<div style="padding:1rem;color:var(--text2)">Fehler beim Laden</div>'; return; }
+  document.getElementById('userlist').innerHTML=(data||[]).map(u=>{
+    const pinDisplay=u.pin
+      ? `<span title="PIN anzeigen" style="font-family:monospace;font-size:0.95rem;letter-spacing:3px;cursor:pointer;color:var(--text2);user-select:none" onclick="this.textContent=this.textContent==='••••'?'${u.pin}':'••••'">••••</span>`
+      : `<span style="color:var(--text2);font-size:0.8rem;font-style:italic">kein PIN</span>`;
+    const adminBadge=u.is_admin?`<span style="font-size:0.7rem;background:rgba(200,16,46,0.15);color:var(--primary);border:1px solid rgba(200,16,46,0.3);border-radius:4px;padding:1px 5px;margin-left:5px">Admin</span>`:'';
+    return `<div class="user-mgmt-row">
+      <div class="user-name">${escHtml(u.name)}${adminBadge}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${pinDisplay}
+        <button class="pin-btn" title="PIN zurücksetzen" onclick="resetPin('${jsq(u.name)}')">🔓</button>
+        <button class="del-btn" title="Löschen" onclick="deleteUser('${jsq(u.name)}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('') || '<div style="padding:1rem;color:var(--text2);font-size:0.85rem">Keine Spieler</div>';
+}
+
+async function resetPin(name){
+  if(!confirm(`PIN von "${name}" zurücksetzen?`)) return;
+  const {error}=await sb.from('players').update({pin:null}).ilike('name',name);
+  if(error) toast('Fehler: '+error.message,'e');
+  else{ toast(`PIN vo ${name} zrugggsetzt 🔓`,'s'); await loadUsers(); }
+}
+
+async function deleteUser(name){
+  if(!confirm(`"${name}" wirklich löschen?`)) return;
+  loading(true);
+  try{
+    await sb.from('tipps').delete().eq('player_name',name);
+    await sb.from('players').delete().ilike('name',name);
+    toast(`${name} isch wäg 🗑️`,'s');
+    await loadUsers();
+  }catch(e){ toast('Fehler: '+e.message,'e'); }
+  finally{ loading(false); }
+}
+
+async function loadUsers(){
   try{
     const {data:players}=await sb.from('players').select('name,pin').order('created_at');
     const rows=(players||[]).map(p=>`
