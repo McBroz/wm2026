@@ -178,6 +178,10 @@
   .chat-msg .cm-name { font-size: 0.7rem; font-weight: 600; color: var(--pe-light); margin-bottom: 2px; }
   .chat-msg.mine .cm-name { color: var(--primary); }
   .chat-msg .cm-time { font-size: 0.62rem; color: var(--text2); margin-top: 3px; text-align: right; }
+  .cm-admin { display: inline-flex; gap: 6px; margin-left: 8px; vertical-align: middle; }
+  .cm-admin button { background: none; border: none; cursor: pointer; font-size: 0.72rem; padding: 0; opacity: 0.45; line-height: 1; }
+  .cm-admin button:hover { opacity: 1; }
+  .blocked-badge { font-size: 0.7rem; background: rgba(120,120,120,0.18); color: var(--text2); border: 1px solid rgba(120,120,120,0.35); border-radius: 4px; padding: 1px 5px; margin-left: 5px; }
   .chat-input-row { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); background: var(--surface2); }
   .chat-input-row input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 0.9rem; outline: none; }
   .chat-input-row input:focus { border-color: var(--primary); }
@@ -682,7 +686,8 @@ async function loadChat(initial){
     box.innerHTML=data.map(m=>{
       const mine=m.name===ME;
       const t=new Date(m.created_at).toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'});
-      return `<div class="chat-msg${mine?' mine':''}">${mine?'':`<div class="cm-name">${escHtml(m.name)}</div>`}<div>${escHtml(m.msg)}</div><div class="cm-time">${t}</div></div>`;
+      const adm=ADMIN?`<span class="cm-admin"><button title="Nachricht löschen" onclick="delChatMsg(${m.id})">🗑️</button>${mine?'':`<button title="${escHtml(m.name)} im Chat sperren" onclick="blockFromChat('${jsq(m.name)}')">🚫</button>`}</span>`:'';
+      return `<div class="chat-msg${mine?' mine':''}">${mine?'':`<div class="cm-name">${escHtml(m.name)}</div>`}<div>${escHtml(m.msg)}</div><div class="cm-time">${t}${adm}</div></div>`;
     }).join('');
     if(atBottom) box.scrollTop=box.scrollHeight;
   }catch(e){
@@ -693,12 +698,42 @@ async function sendChat(){
   const inp=document.getElementById('chat-inp');
   const msg=inp.value.trim();
   if(!msg||!ME) return;
-  inp.value='';
   try{
+    const {data:pl}=await sb.from('players').select('blocked').ilike('name',ME).single();
+    if(pl&&pl.blocked){ toast('Du bisch im Chat gsperrt 🚫','e'); return; }
     const {error}=await sb.from('chat_messages').insert({name:ME,msg});
     if(error) throw error;
+    inp.value='';
     chatLastId=0; loadChat(true);
   }catch(e){toast('Fehler: '+e.message,'e');}
+}
+
+// ─── chat moderation (admin) ───
+async function delChatMsg(id){
+  if(!ADMIN) return;
+  if(!confirm('Nachricht wirklich löschen?')) return;
+  const {error}=await sb.from('chat_messages').delete().eq('id',id);
+  if(error){ toast('Fehler: '+error.message,'e'); return; }
+  toast('Nachricht glöscht 🗑️','s');
+  chatLastId=0; loadChat(true);
+}
+
+async function blockFromChat(name){
+  if(!ADMIN) return;
+  if(!confirm('"'+name+'" im Chat sperren? (Tippen bleibt möglich)')) return;
+  const {error}=await sb.from('players').update({blocked:true}).ilike('name',name);
+  if(error){ toast('Fehler: '+error.message,'e'); return; }
+  toast(name+' isch im Chat gsperrt 🚫','s');
+}
+
+async function toggleBlock(name,blocked){
+  if(!ADMIN) return;
+  const q=blocked?'"'+name+'" wieder für den Chat freigeben?':'"'+name+'" im Chat sperren? (Tippen bleibt möglich)';
+  if(!confirm(q)) return;
+  const {error}=await sb.from('players').update({blocked:!blocked}).ilike('name',name);
+  if(error){ toast('Fehler: '+error.message,'e'); return; }
+  toast(blocked?name+' darf wieder schribe ✅':name+' isch im Chat gsperrt 🚫','s');
+  await loadUsers();
 }
 
 function logout(){
@@ -1031,18 +1066,20 @@ async function loadAdmin(){
 
 async function loadUsers(){
   if(!ADMIN) return;
-  const {data,error}=await sb.from('players').select('name,pin,is_admin').order('created_at');
+  const {data,error}=await sb.from('players').select('name,pin,is_admin,blocked').order('created_at');
   if(error){ document.getElementById('userlist').innerHTML='<div style="padding:1rem;color:var(--text2)">Fehler</div>'; return; }
   document.getElementById('userlist').innerHTML=(data||[]).map(u=>{
     const pinDisplay=u.pin
       ? '<span style="font-family:monospace;font-size:0.95rem;letter-spacing:3px;cursor:pointer;color:var(--text2);user-select:none" onclick="this.textContent=this.textContent===String.fromCharCode(8226,8226,8226,8226)?this.dataset.p:String.fromCharCode(8226,8226,8226,8226)" data-p="'+u.pin+'">'+String.fromCharCode(8226,8226,8226,8226)+'</span>'
       : '<span style="color:var(--text2);font-size:0.8rem;font-style:italic">kein PIN</span>';
     const adminBadge=u.is_admin?'<span style="font-size:0.7rem;background:rgba(200,16,46,0.15);color:var(--primary);border:1px solid rgba(200,16,46,0.3);border-radius:4px;padding:1px 5px;margin-left:5px">Admin</span>':'';
+    const blockedBadge=u.blocked?'<span class="blocked-badge">Chat gesperrt</span>':'';
     const n=jsq(u.name);
     return '<div class="user-mgmt-row">'
-      +'<div class="user-name">'+escHtml(u.name)+adminBadge+'</div>'
+      +'<div class="user-name">'+escHtml(u.name)+adminBadge+blockedBadge+'</div>'
       +'<div style="display:flex;align-items:center;gap:8px">'
       +pinDisplay
+      +'<button class="pin-btn" title="'+(u.blocked?'Chat-Sperre aufheben':'Im Chat sperren')+'" onclick="toggleBlock(\''+n+'\','+(u.blocked?'true':'false')+')">'+(u.blocked?'&#x2705;':'&#x1F6AB;')+'</button>'
       +'<button class="pin-btn" title="PIN zuruecksetzen" onclick="resetPin(\''+n+'\')">&#x1F513;</button>'
       +'<button class="del-btn" title="Loeschen" onclick="deleteUser(\''+n+'\')">&#x1F5D1;</button>'
       +'</div></div>';
